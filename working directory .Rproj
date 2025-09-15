@@ -1,0 +1,16 @@
+Version: 1.0
+ProjectId: 02e2409c-fbef-4ba4-8ce5-3439b455b312
+
+RestoreWorkspace: Default
+SaveWorkspace: Default
+AlwaysSaveHistory: Default
+
+EnableCodeIndexing: Yes
+UseSpacesForTab: Yes
+NumSpacesForTab: 2
+Encoding: UTF-8
+
+RnwWeave: Sweave
+LaTeX: pdfLaTeX
+
+ProjectName: Modeling the Likelihood of Stroke from Health and Lifestyle Predictors
