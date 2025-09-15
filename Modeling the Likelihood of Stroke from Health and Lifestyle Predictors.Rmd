@@ -1,0 +1,507 @@
+---
+title: "Modeling the Likelihood of Stroke from Health and Lifestyle Predictors"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Set up
+```{r}
+#install and load packages 
+install.packages("ggplot2")
+install.packages("dplyr")
+install.packages("corrplot")
+install.packages("caret")
+install.packages("MASS")
+install.packages("pROC")
+install.packages("tidyverse")
+install.packages("GGally")
+install.packages("glmnet")
+install.packages("randomForest")
+install.packages("ROSE")
+library(ROSE)
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(caret) 
+library(MASS)  
+library(pROC)  
+library(tidyverse)
+library(GGally)
+library(glmnet)
+library(randomForest)
+
+#load the dataset
+stroke_data <- read_csv("stroke_prediction.csv")
+view(stroke_data)
+count(stroke_data)
+```
+
+#EDA and pre-processing
+```{r}
+# Summary statistics
+summary(stroke_data)
+str(stroke_data)
+
+# Check for missing values
+colSums(is.na(stroke_data))
+
+# Ensure df_diabetes is a tibble (to avoid select() issues)
+stroke_data <- as_tibble(stroke_data)
+
+#convert bmi into numeric form
+stroke_data$bmi <- as.numeric(as.character(stroke_data$bmi))
+colSums(is.na(stroke_data))
+str(stroke_data)
+
+#impute missing bmi values 
+stroke_data <- stroke_data %>%
+  mutate(bmi = if_else(is.na(bmi), median(bmi, na.rm = TRUE), bmi))
+colSums(is.na(stroke_data))
+
+#convert categorical variables into factor variables
+stroke_data$gender <- as.factor(stroke_data$gender)
+stroke_data$ever_married <- as.factor(stroke_data$ever_married)
+stroke_data$work_type <- as.factor(stroke_data$work_type)
+stroke_data$residence_type <- as.factor(stroke_data$residence_type)
+stroke_data$smoking_status <- as.factor(stroke_data$smoking_status)
+stroke_data$stroke <- factor(stroke_data$stroke, levels = c(0,1), labels = c("No","Yes"))
+
+#remove gender_Other
+if (sum(stroke_data$gender == "Other") <= 1) {
+  stroke <- filter(stroke_data, gender != "Other")
+  stroke_data$gender <- droplevels(stroke_data$gender)
+}
+
+#remove ID variable - not essential to our model 
+stroke_data$id <- NULL
+```
+
+#visualisation
+```{r}
+#GGally plot
+GGally::ggpairs(
+  stroke_data,
+  cardinality_threshold = 500,
+  title = "Pairwise Correlations"
+)
+
+# Explicitly use dplyr::select() to avoid conflicts
+strokedata_numeric <- dplyr::select(stroke_data, -stroke)
+
+
+# Boxplot for outlier detection --- change into stroke by age? ##needed?
+ggplot(stroke_data, aes(y=age, x=stroke)) + 
+  geom_boxplot() + ggtitle("Age Levels by Stroke")
+
+# Class distribution (checking for imbalance)
+table(stroke_data$stroke)
+#plot barchart to visualise imbalance
+ggplot(stroke_data, aes(x = factor(stroke), fill = factor(stroke))) +
+  geom_bar(stat = "count") +
+  labs(title = "Sample distribution of 'Stroke'",
+       x = "Stroke (0/1)",
+       y = "Count",
+       fill = "Stroke") + 
+  theme_minimal() +
+  scale_fill_discrete(name = "Stroke", labels = c("No Stroke (0)", "Stroke (1)"))
+```
+
+#correct for the imbalance in the outcome variable - stroke
+```{r}
+install.packages("themis")
+library(themis)
+recipe <- recipe(stroke ~ ., data = stroke_data) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_smote(stroke)
+prep_rec <- prep(recipe)
+stroke_balanced <- bake(prep_rec, new_data = NULL)
+table(stroke_balanced$stroke)
+
+#Test-train split
+set.seed(123)
+trainIndex <- createDataPartition(stroke_balanced$stroke, p = 0.8, list = FALSE)
+train_data <- stroke_balanced[trainIndex, ]
+test_data <- stroke_balanced[-trainIndex, ]
+table(train_data$stroke)
+table(test_data$stroke)
+
+#cross-validation on train_data 
+cv <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  savePredictions = "final"
+)
+```
+
+#Model fitting
+#Model 1 - Logistic Model
+```{r}
+# (1) Train Logistic Regression Model
+logistic_model <- glm(stroke ~ ., data=train_data, family=binomial(logit))
+summary(logistic_model)
+anova(logistic_model, test="Chisq")
+
+#Predictions
+logistic_pred <- predict(logistic_model, newdata=test_data, type="response")
+logistic_pred_class <- factor(ifelse(logistic_pred >= 0.5, "Yes", "No"), levels = c("No", "Yes"))
+stroke_test_class <- factor(test_data$stroke, levels = c("No", "Yes"))
+
+#Confusion matrix & Accuracy
+logistic_model_confusion_matrix <- table(Predicted = logistic_pred_class, Actual = stroke_test_class)
+logistic_model_confusion_matrix
+accuracy <- function(x) sum(diag(x)) / sum(x) * 100
+logistic_model_accuracy <- accuracy(logistic_model_confusion_matrix)
+logistic_model_accuracy
+
+#model significance test
+install.packages("pscl")
+library(pscl)
+logistic_G_calc <- logistic_model$null.deviance - logistic_model$deviance
+logistic_Gdf <- logistic_model$df.null - logistic_model$df.residual
+pscl::pR2(logistic_model)
+qchisq(.95, df = logistic_Gdf)
+1 - pchisq(logistic_G_calc, logistic_Gdf)
+
+#cross-validation evaluation
+train_control <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  savePredictions = "final"
+)
+
+logistic_model_cv <- train(
+  stroke ~ ., 
+  data = train_data,
+  method = "glm", 
+  family = "binomial",
+  metric = "ROC", 
+  trControl = train_control
+)
+print(logistic_model_cv$results)
+
+#ROC curve for logistic model
+roc_logistic <- roc(logistic_model_cv$pred$obs, logistic_model_cv$pred$Yes)
+plot(roc_logistic, main = "ROC Curve for Logistic Model", print.auc = TRUE, legacy.axes = TRUE)
+```
+
+#Model 2 - Improved Logistic model 
+```{r}
+logistic_model2 <- glm(stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+                         work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+                         smoking_status_Unknown, 
+                       data = train_data, family = binomial(logit))
+summary(logistic_model2)
+anova(logistic_model2, test="Chisq")
+
+#Predictions
+logistic_pred2 <- predict(logistic_model2, newdata=test_data, type="response")
+logistic_pred_class2 <- factor(ifelse(logistic_pred2 >= 0.5, "Yes", "No"), levels = c("No", "Yes"))
+
+#Confusion matrix & Accuracy
+logistic_model_confusion_matrix2 <- table(Predicted = logistic_pred_class2, Actual = stroke_test_class)
+logistic_model_confusion_matrix2
+accuracy <- function(x) sum(diag(x)) / sum(x) * 100
+logistic_model_accuracy2 <- accuracy(logistic_model_confusion_matrix2)
+logistic_model_accuracy2
+
+#model significance test
+logistic2_G_calc <- logistic_model2$null.deviance - logistic_model2$deviance
+logistic2_Gdf <- logistic_model2$df.null - logistic_model2$df.residual
+pscl::pR2(logistic_model2)
+qchisq(.95, df = logistic2_Gdf)
+1 - pchisq(logistic2_G_calc, logistic2_Gdf)
+
+#cross-validation evaluation
+logistic_model_cv2 <- train(
+  stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+    work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+    smoking_status_Unknown, 
+  data = train_data,
+  method = "glm", 
+  family = "binomial",
+  metric = "ROC", 
+  trControl = train_control
+)
+print(logistic_model_cv2$results)
+
+#plot ROC curve
+roc_logistic2 <- roc(logistic_model_cv2$pred$obs, logistic_model_cv2$pred$Yes)
+plot(roc_logistic2, main = "ROC Curve for Logistic Model(2)", print.auc = TRUE, legacy.axes = TRUE)
+
+
+##logistic model training 
+logistic_model <- train(
+  stroke ~ ., data = train_data, method = "glm", family = "binomial",
+  metric = "ROC", trControl = cv
+)
+
+logistic_model2 <- train(
+  stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+    work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+    smoking_status_Unknown,
+  data = train_data, method = "glm", family = "binomial",
+  metric = "ROC", trControl = cv
+)
+```
+
+
+#Model 3 - classification tree 
+```{r}
+install.packages(tree)
+library(tree)
+tree_model <- tree(stroke ~., data = train_data)
+summary(tree_model)
+
+#plot 
+plot(tree_model)
+text(tree_model)
+
+#Predict probabilities on test data
+tree_pred <- predict(tree_model, newdata = test_data, type = "vector")
+#Confusion matrix and accuracy
+tree_pred_class <- factor(ifelse(tree_pred[, "Yes"] >= 0.5, "Yes", "No"), levels = c("No", "Yes"))
+tree_confusion_matrix <- table(Predicted = tree_pred_class, Actual = stroke_test_class)
+tree_confusion_matrix
+accuracy <- function(x) sum(diag(x)) / sum(x) * 100
+tree_accuracy <- accuracy(tree_confusion_matrix)
+tree_accuracy
+
+#cross-validation to find optimal tree size 
+cv_stroke <- cv.tree(tree_model, FUN = prune.misclass)
+best_size <- cv_stroke$size[which.min(cv_stroke$dev)]
+best_size
+
+#prune the classification tree
+#we find  the original classification tree is already optimally fitted 
+pruned_tree <- prune.misclass(tree_model, best = best_size)
+plot(pruned_tree)
+text(pruned_tree)
+
+# Predict on test data using the pruned tree and evaluate
+pruned_predictions <- predict(pruned_tree, test_data, type = "class")
+pruned_confusion_matrix <- table(pruned_predictions, test_data$stroke)
+# Calculate pruned accuracy
+pruned_accuracy <- sum(diag(pruned_confusion_matrix)) / sum(pruned_confusion_matrix) * 100
+pruned_accuracy 
+
+#model significance test
+#classification tree uses different fitting criterion - no null deviance and deviance in the glm sense
+
+#cross-validation evaluation
+tree_model_cv <- train(
+  stroke ~ ., 
+  data = train_data,
+  method = "rpart", 
+  metric = "ROC", 
+  trControl = train_control,
+  tuneLength = 10  
+)
+print(tree_model_cv$results)
+
+#ROC plot
+roc_tree <- roc(tree_model_cv$pred$obs, tree_model_cv$pred$Yes)
+plot(roc_tree, main = "ROC Curve for Classification Tree", print.auc = TRUE, legacy.axes = TRUE)
+
+#train model
+tree_model <- train(
+  stroke ~ ., 
+  data = train_data,
+  method = "rpart",          
+  metric = "ROC", 
+  trControl = cv,
+  tuneLength = 10
+)
+```
+
+#Model 4 - Random forest model
+```{r}
+train_data$stroke <- factor(train_data$stroke, levels = c("No", "Yes"))
+test_data$stroke <- factor(test_data$stroke, levels = c("No", "Yes"))
+rf_model <- randomForest(stroke ~., data = train_data)
+summary(rf_model)
+
+#plot randomforest 
+varImpPlot(rf_model)
+
+#Predict probabilities on test data
+rf_pred <- predict(rf_model, newdata = test_data, type = "prob")
+#Confusion matrix and accuracy
+rf_pred_class <- factor(ifelse(rf_pred[, "Yes"] >= 0.5, "Yes", "No"), levels = c("No", "Yes"))
+rf_confusion_matrix <- table(Predicted = rf_pred_class, Actual = stroke_test_class)
+rf_confusion_matrix
+accuracy <- function(x) sum(diag(x)) / sum(x) * 100
+rf_accuracy <- accuracy(rf_confusion_matrix)
+rf_accuracy
+
+#cross-validation evaluation
+rf_model_cv <- train(
+  stroke ~ ., 
+  data = train_data,
+  method = "rf", 
+  family = "binomial",
+  metric = "ROC", 
+  trControl = train_control
+)
+print(rf_model_cv$results)
+
+#ROC plot
+roc_rf <- roc(rf_model_cv$pred$obs, rf_model_cv$pred$Yes)
+plot(roc_rf, main = "ROC Curve for random forest", print.auc = TRUE, legacy.axes = TRUE)
+
+#train model
+rf_model <- train(
+  stroke ~ ., 
+  data = train_data,
+  method = "rf",             
+  metric = "ROC", 
+  trControl = cv
+)
+```
+
+#Model 5 - LDA model
+```{r}
+lda_model <- lda(stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+                    work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+                    smoking_status_Unknown, data = train_data)
+summary(lda_model)
+
+#confusion matrix and accuracy test 
+lda.predict <- predict(lda_model, newdata = test_data)
+lda_confusion_matrix <- table(predicted = lda.predict$class, truth = test_data$stroke)
+lda_confusion_matrix
+accuracy <- function(x) sum(diag(x)) / sum(x) * 100
+lda_accuracy <- accuracy(lda_confusion_matrix)
+lda_accuracy
+
+#cross-validation evaluation
+lda_cv <- train(
+  stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+    work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+    smoking_status_Unknown, 
+  data = train_data,
+  method = "lda", 
+  family = "binomial",
+  metric = "ROC", 
+  trControl = train_control
+)
+print(lda_cv$results)
+
+#plot ROC curve
+roc_lda <- roc(lda_cv$pred$obs, lda_cv$pred$Yes)
+plot(roc_lda, main = "ROC Curve for LDA", print.auc = TRUE, legacy.axes = TRUE)
+
+#train model
+lda_model <- train(
+  stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+    work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+    smoking_status_Unknown, 
+  data = train_data,
+  method = "lda", 
+  family = "binomial",
+  metric = "ROC", 
+  trControl = cv
+)
+```
+
+#Model 6 - QDA model
+```{r}
+qda_model <- qda(stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+                   work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+                   smoking_status_Unknown, data = train_data)
+summary(qda_model)
+
+#confusion matrix and accuracy test 
+qda.predict <- predict(qda_model, newdata = test_data)
+qda_confusion_matrix <- table(predicted = qda.predict$class, truth = test_data$stroke)
+qda_confusion_matrix
+accuracy <- function(x) sum(diag(x)) / sum(x) * 100
+qda_accuracy <- accuracy(qda_confusion_matrix)
+qda_accuracy
+
+#cross-validation evaluation
+qda_cv <- train(
+  stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+    work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+    smoking_status_Unknown, 
+  data = train_data,
+  method = "qda", 
+  family = "binomial",
+  metric = "ROC", 
+  trControl = train_control
+)
+print(qda_cv$results)
+
+#plot ROC curve
+roc_qda <- roc(qda_cv$pred$obs, qda_cv$pred$Yes)
+plot(roc_qda, main = "ROC Curve for QDA", print.auc = TRUE, legacy.axes = TRUE)
+
+#train model
+qda_model <- train(stroke ~ . - bmi - gender_Male - gender_Other - ever_married_Yes - 
+                   work_type_Govt_job - work_type_Never_worked - residence_type_Urban - smoking_status_smokes - 
+                   smoking_status_Unknown, data = train_data, method = "qda", metric = "ROC", trControl = cv)
+```
+
+#Model evaluation
+```{r}
+#Summary
+models <- list(
+  Full_logistic_model = logistic_model,
+  Logistic_model_2= logistic_model2,
+  Random_forest = rf_model,
+  DecisionTree = tree_model,
+  LDA = lda_model,
+  QDA = qda_model)
+
+results <- lapply(models, function(m) {
+  # Best cross-validated AUC
+  best_auc <- max(m$results$ROC, na.rm = TRUE)
+  # Confusion matrix on CV predictions
+  cm <- confusionMatrix(m$pred$pred, m$pred$obs, positive = "Yes")
+  c(AUC = best_auc,
+    Sensitivity = cm$byClass["Sensitivity"],
+    Specificity = cm$byClass["Specificity"])})
+
+results_df <- do.call(rbind, results) %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Model")
+View(results_df)
+# Display summary in table format
+install.packages("knitr")  
+library(knitr)
+kable(results_df, caption = "Model Performance Summary (AUC, Sensitivity, Specificity)")
+
+#resample summary
+#per‐fold metrics
+resamp <- resamples(models)
+summary(resamp)
+
+#raw per‐fold metrics
+vals <- resamp$values
+long_vals <- vals %>%
+  pivot_longer(
+    cols = -Resample,
+    names_to  = c("Model", "Metric"),
+    names_sep = "~",
+    values_to = "Value" )
+
+sd_summary <- long_vals %>%
+  group_by(Model, Metric) %>%
+  summarize(
+    SD = sd(Value),
+    .groups = "drop" ) %>%
+  arrange(Model, Metric)
+
+sd_wide <- sd_summary %>%
+  pivot_wider(
+    names_from  = Metric,
+    values_from = SD )
+
+print(sd_wide)
+```
