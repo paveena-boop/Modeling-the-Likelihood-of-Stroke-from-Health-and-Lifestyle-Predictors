@@ -122,23 +122,14 @@ cv <- trainControl(
 )
 ```
 ![Sample distribution of 'Stroke'](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/aea9bb5395d9a160ad157fd2304914622f9d36fd/images/Screenshot%202568-09-25%20at%2021.05.04.png)
+Sample distribution of 'Stroke'
 
-Figure 1 shows the large discrepancy between the datapoints in the outcome variable that classify individuals to have experienced a stroke (4861) and not (249). Lack of datapoints for
-stroke will limit the model’s sensitivity towards predicting actual stroke occurrences as this
-imbalance impairs the model’s pattern recognition of cases, further restricting its credibility
-to generalize to unseen data. I have corrected for this imbalance through oversampling.
-To observe the other variables for trends and potential collinearity, I will create a correlogram,
-visualizing preliminary interactions in the dataset.
+The figure shows a large discrepancy between the datapoints in the outcome variable, which classify individuals as having experienced a stroke (4861) and not (249). A lack of data points for stroke will limit the model’s sensitivity in predicting actual stroke occurrences, as this imbalance impairs the model’s pattern recognition of cases, further restricting its credibility in generalizing to unseen data. I have corrected for this imbalance through oversampling. To observe the other variables for trends and potential collinearity, I will create a correlogram, visualizing preliminary interactions in the dataset.
 
-Figure 2 suggests ‘age’, ‘hypertension’, and ‘avg_glucose_level’ show the strongest
-associations with ‘stroke’, suggesting they are important variables to be included in the
-models designed to predict the likelihood of a stroke occurring. Additionally, categorical
-variables, ‘work_type’ and ‘smoking_status’, may appear influential in conjunction with the
-other variables. The figure shows weak correlations for ‘gender’, ‘residence_type’, ‘heart
-disease’, and ‘bmi’, suggesting they may not contribute a significant impact to the models.
-In preparation for fitting classification models, I have adjusted for N/A values and
-inconsistencies prevalent in ‘bmi’, imputing the missing values with the group median and
-transforming the variable into numeric form.
+![Correlogram](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/82e52a40c6985bb7c7edb0b56236a466962cee1a/images/Screenshot%202568-09-25%20at%2021.05.33.png)
+Correlogram
+
+The correlogram suggests ‘age’, ‘hypertension’, and ‘avg_glucose_level’ show the strongest associations with ‘stroke’, suggesting they are important variables to be included in the models designed to predict the likelihood of a stroke occurring. Additionally, categorical variables, ‘work_type’ and ‘smoking_status’, may appear influential in conjunction with the other variables. The figure shows weak correlations for ‘gender’, ‘residence_type’, ‘heart disease’, and ‘bmi’, suggesting they may not contribute a significant impact to the models. In preparation for fitting classification models, I have adjusted for N/A values and inconsistencies prevalent in ‘bmi’, imputing the missing values with the group median and transforming the variable into numeric form.
 
 # Model fitting
 To predict the likelihood of a stroke occurring, I began by employing a 10 fold cross validation to access stratified k cross validation and accommodate the imbalanced nature of the dataset and reduce the presence of variance and overfitting that can appear as I formulate potential models. My first model design will be a logistic model, apparent in its full form, utilizing all the predictors in the dataset.
@@ -194,7 +185,16 @@ print(logistic_model_cv$results)
 roc_logistic <- roc(logistic_model_cv$pred$obs, logistic_model_cv$pred$Yes)
 plot(roc_logistic, main = "ROC Curve for Logistic Model", print.auc = TRUE, legacy.axes = TRUE)
 ```
-The model presented good fit with the McFadden pseudo-R-squared amounting to 0.33. Complementarily, based on the test data and confusion matrix in table 1, I found the model obtained 77.1% accuracy, 74.4% sensitivity, and 81.7% specificity, indicating the model delivered high predictive accuracy. Figure 4 further displays the model’s strong discriminatory ability highlighting the ROC at 0.853. However, there were multiple variables that did not display impact significance as visible in figure 3 – lack of significance (*** , **), which I will account for by removing them in my next logistic model to gain parsimony.
+![Anova results](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/82e52a40c6985bb7c7edb0b56236a466962cee1a/images/Screenshot%202568-09-25%20at%2021.06.14.png)
+Anova results
+
+![ROC plot for logistic model(1)](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/82e52a40c6985bb7c7edb0b56236a466962cee1a/images/Screenshot%202568-09-25%20at%2021.06.56.png)
+ROC plot for Logistic Model(1)
+
+![Confusion matrix - logistic model](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/82e52a40c6985bb7c7edb0b56236a466962cee1a/images/Screenshot%202568-09-25%20at%2021.07.36.png)
+Confusion matrix - Logistic Model(1)
+
+The model presented a good fit with the McFadden pseudo-R-squared amounting to 0.33. Complementarily, based on the test data and confusion matrix, I found the model obtained 77.1% accuracy, 74.4% sensitivity, and 81.7% specificity, indicating the model delivered high predictive accuracy. The ROC plot further displays the model’s strong discriminatory ability, highlighting the ROC at 0.853. However, multiple variables did not display high significance as visible in the anova results – lack of significance (*** , **), which I will account for by removing them in my next logistic model to gain parsimony.
 
 ## Model 2 - Improved Logistic model 
 ```{r}
@@ -255,10 +255,23 @@ logistic_model2 <- train(
   metric = "ROC", trControl = cv
 )
 ```
-The reduced logistic model removed the variables that do not display high significance, visible in figure 4 to improve fit and performance. My second model emphasized simplicity that was pronounced with a lower McFadden pseudo-R-squared of 0.327, illustrating a reduction in the model’s explanatory power. On the test dataset, the model displayed 77.8% accuracy, 73.4% sensitivity, and 82.8% specificity, indicating improved predictive accuracy – outperforming the first model. The ROC in figure 5 is identical to the full model and can be interpreted similarly.
+
+![Confusion Matrix - Logistic model (2)](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/82e52a40c6985bb7c7edb0b56236a466962cee1a/images/Screenshot%202568-09-25%20at%2021.08.13.png)
+Confusion Matrix - Logistic model(2)
+
+The reduced logistic model removed the variables that do not display high significance to improve fit and performance. My second model emphasized simplicity that was pronounced with a lower McFadden pseudo-R-squared of 0.327, illustrating a reduction in the model’s explanatory power. On the test dataset, the model displayed 77.8% accuracy, 73.4% sensitivity, and 82.8% specificity, indicating improved predictive accuracy – outperforming the first model. The ROC is identical to the full model and can be interpreted similarly.
+
+![ROC plot for logistic model(2)](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/82e52a40c6985bb7c7edb0b56236a466962cee1a/images/Screenshot%202568-09-25%20at%2021.08.42.png)
+ROC plot - Logistic model(2)
 
 ## Model 3 - classification tree 
-My next model is a classification tree, inspired to capture more complex predictions and capture any non-linear interactions in the dataset. The format of this model supports interpretability and will prove useful in understanding the most significant factors that trigger the likelihood of a stroke occurring. My model includes ‘age’, ‘hypertension’, ‘smoking_status_never.smoked’, ‘residence_type_Urban’ , and ‘heart_disease’ as its key variables, and consists of 11 nodes balancing complexity and interpretability. A concerning remark surrounds the inclusion of ‘residence_type_Urban’ as significant, since it contradicts the direction suggested by the logistic models produced. Nevertheless, the model generates 85.96% classification accuracy, 89.1% sensitivity, 85.1% specificity, and a ROC of 0.930 (Figure 7), making clear its superior performance over prior logistic models. To test for overfitting, I pruned the tree model and found no difference in results suggesting the original classification tree was already optimized and did not inherit any unnecessary complexity.
+My next model is a classification tree, inspired to capture more complex predictions and capture any non-linear interactions in the dataset. The format of this model supports interpretability and will prove useful in understanding the most significant factors that trigger the likelihood of a stroke occurring. My model includes ‘age’, ‘hypertension’, ‘smoking_status_never.smoked’, ‘residence_type_Urban’, and ‘heart_disease’ as its key variables, and consists of 11 nodes balancing complexity and interpretability. A concerning remark surrounds the inclusion of ‘residence_type_Urban’ as significant, since it contradicts the direction suggested by the logistic models produced. Nevertheless, the model generates 85.96% classification accuracy, 89.1% sensitivity, 85.1% specificity, and a ROC of 0.930 (Figure 7), making clear its superior performance over prior logistic models. To test for overfitting, I pruned the tree model and found no difference in results, suggesting the original classification tree was already optimized and did not inherit any unnecessary complexity.
+
+![classification tree](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/82e52a40c6985bb7c7edb0b56236a466962cee1a/images/Screenshot%202568-09-25%20at%2021.09.02.png)
+Classification tree
+
+![Confusion matrix - classification tree](https://github.com/paveena-boop/Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors/blob/82e52a40c6985bb7c7edb0b56236a466962cee1a/images/Screenshot%202568-09-25%20at%2021.09.02.png)
+Confusion matrix - Classification tree
 
 ```{r}
 install.packages(tree)
