@@ -1,6 +1,6 @@
 # Modeling-the-Likelihood-of-Stroke-from-Health-and-Lifestyle-Predictors
 
-# Data-set
+## Data-set
 The dataset consists of 5110 observations alongside 12 variables
 
 Description of variables:
@@ -121,8 +121,7 @@ cv <- trainControl(
   savePredictions = "final"
 )
 ```
-Figure 1 shows the large discrepancy between the datapoints in the outcome variable that
-classify individuals to have experienced a stroke (4861) and not (249). Lack of datapoints for
+Figure 1 shows the large discrepancy between the datapoints in the outcome variable that classify individuals to have experienced a stroke (4861) and not (249). Lack of datapoints for
 stroke will limit the model’s sensitivity towards predicting actual stroke occurrences as this
 imbalance impairs the model’s pattern recognition of cases, further restricting its credibility
 to generalize to unseen data. I have corrected for this imbalance through oversampling.
