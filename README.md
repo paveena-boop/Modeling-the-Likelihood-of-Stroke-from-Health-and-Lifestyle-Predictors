@@ -121,6 +121,7 @@ cv <- trainControl(
   savePredictions = "final"
 )
 ```
+![Sample Distribution of 'Stroke'](images/Screenshot 2568-09-25 at 21.05.04.png)
 Figure 1 shows the large discrepancy between the datapoints in the outcome variable that classify individuals to have experienced a stroke (4861) and not (249). Lack of datapoints for
 stroke will limit the model’s sensitivity towards predicting actual stroke occurrences as this
 imbalance impairs the model’s pattern recognition of cases, further restricting its credibility
